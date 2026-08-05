@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from opnsense_mcp.api_client import WriteDisabledError
 from opnsense_mcp.tools.diagnostics import (
     opn_dns_lookup,
     opn_pf_states,
@@ -186,6 +187,17 @@ class TestOpnPing:
         result = await opn_ping(mock_ctx, host="")
         assert "error" in result
 
+    async def test_ping_rejects_tab_character(self, mock_api, mock_ctx):
+        result = await opn_ping(mock_ctx, host="evil\thost")
+        assert "error" in result
+
+    async def test_fails_when_writes_disabled(self, mock_ctx_no_writes):
+        """Ping makes the firewall originate outbound ICMP traffic - a
+        write-gate is required, matching every other firewall-facing tool.
+        """
+        with pytest.raises(WriteDisabledError):
+            await opn_ping(mock_ctx_no_writes, host="8.8.8.8")
+
 
 class TestOpnTraceroute:
     """Tests for opn_traceroute."""
@@ -237,6 +249,13 @@ class TestOpnTraceroute:
         result = await opn_traceroute(mock_ctx, host="host | cat /etc/passwd")
         assert "error" in result
 
+    async def test_fails_when_writes_disabled(self, mock_ctx_no_writes):
+        """Traceroute makes the firewall originate outbound traffic - a
+        write-gate is required, matching every other firewall-facing tool.
+        """
+        with pytest.raises(WriteDisabledError):
+            await opn_traceroute(mock_ctx_no_writes, host="8.8.8.8")
+
 
 class TestOpnDnsLookup:
     """Tests for opn_dns_lookup."""
@@ -281,6 +300,15 @@ class TestOpnDnsLookup:
         mock_api.post = AsyncMock(return_value={"result": "ok", "response": []})
         result = await opn_dns_lookup(mock_ctx, hostname="example.com", server="dns.google")
         assert "error" not in result
+
+    async def test_fails_when_writes_disabled(self, mock_ctx_no_writes):
+        """A caller-chosen `server` makes the firewall query a DNS server it
+        doesn't control - a working exfiltration/internal-scan primitive
+        from a privileged network position. A write-gate is required,
+        matching every other firewall-facing tool.
+        """
+        with pytest.raises(WriteDisabledError):
+            await opn_dns_lookup(mock_ctx_no_writes, hostname="internal-host", server="203.0.113.1")
 
 
 class TestOpnPfStates:
