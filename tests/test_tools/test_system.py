@@ -103,7 +103,8 @@ class TestOpnDownloadConfig:
         assert "firewall" in result["config_xml"]
         assert result["size_bytes"] > 0
 
-    async def test_downloads_config_without_stripping(self, mock_api, mock_ctx):
+    async def test_downloads_config_without_stripping(self, mock_api, mock_ctx, monkeypatch):
+        monkeypatch.setenv("OPNSENSE_ALLOW_SECRETS", "true")
         mock_api.get_text = AsyncMock(return_value=self._SAMPLE_XML)
 
         result = await opn_download_config(mock_ctx, include_sensitive=True)
@@ -336,10 +337,23 @@ class TestOpnGetConfigSection:
         result = await opn_get_config_section(mock_ctx, section="system")
         assert result["data"]["password"] == "[REDACTED]"
 
-    async def test_include_sensitive(self, mock_api, mock_ctx):
+    async def test_include_sensitive(self, mock_api, mock_ctx, monkeypatch):
+        monkeypatch.setenv("OPNSENSE_ALLOW_SECRETS", "true")
         self._setup_mock_api(mock_api)
         result = await opn_get_config_section(mock_ctx, section="system", include_sensitive=True)
         assert result["data"]["password"] == "secret123"
+
+    async def test_include_sensitive_requires_operator_opt_in(self, mock_api, mock_ctx, monkeypatch):
+        """include_sensitive is a caller-supplied tool argument. It must not
+        be honored on its own - an operator-controlled gate (e.g. an env
+        var) is required before secrets are returned unredacted, since a
+        caller can be an AI model acting on injected instructions, not
+        just a deliberate human operator.
+        """
+        monkeypatch.delenv("OPNSENSE_ALLOW_SECRETS", raising=False)
+        self._setup_mock_api(mock_api)
+        result = await opn_get_config_section(mock_ctx, section="system", include_sensitive=True)
+        assert result["data"]["password"] == "[REDACTED]"
 
     async def test_section_not_found(self, mock_api, mock_ctx):
         self._setup_mock_api(mock_api)
