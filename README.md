@@ -14,7 +14,7 @@ A secure [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server
 This MCP server is designed with security as the primary concern:
 
 - **Read-only by default** — write operations require explicit opt-in via `OPNSENSE_ALLOW_WRITES=true`
-- **Savepoint/rollback** — all firewall modifications use OPNsense's built-in 60-second auto-revert mechanism; changes must be explicitly confirmed or they roll back automatically
+- **Savepoint/rollback (OPNsense < 26.7 only)** — where OPNsense still offers the savepoint API, firewall modifications use its built-in 60-second auto-revert; changes must be explicitly confirmed or they roll back automatically. OPNsense 26.7 removed that API upstream — the server detects the missing endpoint at runtime and applies firewall changes immediately, with no automatic rollback
 - **Endpoint blocklist** — dangerous endpoints (`halt`, `reboot`, `poweroff`, `firmware update/upgrade`) are hard-blocked at the API client level and can never be called
 - **API-only** — no SSH access, no command execution, no direct config file manipulation
 - **Local transport** — STDIO only, no network-exposed HTTP/SSE endpoints
@@ -148,7 +148,7 @@ Add to your Cursor MCP settings (Settings > MCP):
 | `opn_download_config` | Download `config.xml` backup with optional sensitive data stripping. Params: `include_sensitive` (default: `false` — passwords and keys are redacted) |
 | `opn_scan_config` | Scan the full configuration, parse it into sections, and collect runtime inventory (firmware, plugins, DHCP, DNS, interfaces, services). Results are cached per session. Params: `force` |
 | `opn_get_config_section` | Get a specific config section as structured JSON. Params: `section`, `include_sensitive` |
-| `opn_mcp_info` | MCP server version, write mode status, detected OPNsense version, and API style |
+| `opn_mcp_info` | MCP server version, write mode status, detected OPNsense version, API style, and whether firewall writes still get savepoint/rollback protection |
 
 ### Network (5 tools)
 
@@ -169,22 +169,24 @@ Add to your Cursor MCP settings (Settings > MCP):
 | `opn_list_nat_rules` | List NAT port forwarding (DNAT) rules. Params: `search`, `limit` | No |
 | `opn_list_firewall_categories` | List firewall rule categories and their UUIDs. Params: `search`, `limit` | No |
 | `opn_firewall_log` | Recent firewall log entries with client-side filtering. Params: `source_ip`, `destination_ip`, `action`, `interface`, `limit` | No |
-| `opn_confirm_changes` | Confirm pending changes, cancelling 60-second auto-rollback. Params: `revision` | Yes |
-| `opn_toggle_firewall_rule` | Toggle a rule's enabled/disabled state with savepoint. Params: `uuid` | Yes |
-| `opn_add_firewall_rule` | Create a new filter rule with savepoint. Params: `action`, `direction`, `interface`, `ip_protocol`, `protocol`, `source_net`, `destination_net`, `destination_port`, `description` | Yes |
-| `opn_delete_firewall_rule` | Delete a filter rule by UUID with savepoint. Params: `uuid` | Yes |
+| `opn_confirm_changes` | Confirm pending changes, cancelling 60-second auto-rollback (OPNsense < 26.7; a no-op returning `not_applicable` on 26.7+). Params: `revision` | Yes |
+| `opn_toggle_firewall_rule` | Toggle a rule's enabled/disabled state with savepoint (OPNsense < 26.7). Params: `uuid` | Yes |
+| `opn_add_firewall_rule` | Create a new filter rule with savepoint (OPNsense < 26.7). Params: `action`, `direction`, `interface`, `ip_protocol`, `protocol`, `source_net`, `destination_net`, `destination_port`, `description` | Yes |
+| `opn_delete_firewall_rule` | Delete a filter rule by UUID with savepoint (OPNsense < 26.7). Params: `uuid` | Yes |
 | `opn_add_alias` | Create a new alias. Params: `name`, `alias_type`, `content`, `description` | Yes |
-| `opn_add_nat_rule` | Create a NAT port forwarding rule with savepoint. Params: `destination_port`, `target_ip`, `interface`, `protocol`, `target_port`, `description` | Yes |
+| `opn_add_nat_rule` | Create a NAT port forwarding rule with savepoint (OPNsense < 26.7). Params: `destination_port`, `target_ip`, `interface`, `protocol`, `target_port`, `description` | Yes |
 | `opn_add_firewall_category` | Create a new firewall rule category. Params: `name`, `color` | Yes |
-| `opn_delete_firewall_category` | Delete a firewall rule category by UUID with savepoint. Params: `uuid` | Yes |
-| `opn_set_rule_categories` | Assign categories to a firewall rule with savepoint. Params: `uuid`, `categories` | Yes |
+| `opn_delete_firewall_category` | Delete a firewall rule category by UUID with savepoint (OPNsense < 26.7). Params: `uuid` | Yes |
+| `opn_set_rule_categories` | Assign categories to a firewall rule with savepoint (OPNsense < 26.7). Params: `uuid`, `categories` | Yes |
 | `opn_add_icmpv6_rules` | Create essential ICMPv6 rules required for IPv6 operation (NDP, RA, ping6) per RFC 4890. Params: `interface` | Yes |
 | `opn_update_alias` | Update an existing alias (name, content, type, description). Read-modify-write. Params: `uuid`, `name`, `content`, `description`, `alias_type`, `enabled` | Yes |
 | `opn_delete_alias` | Delete an alias by UUID. Check rule references first. Params: `uuid` | Yes |
 | `opn_toggle_alias` | Toggle alias enabled/disabled state. Params: `uuid` | Yes |
-| `opn_update_firewall_rule` | Update filter rule fields with savepoint. Params: `uuid`, `action`, `direction`, `interface`, `ip_protocol`, `protocol`, `source_net`, `source_not`, `source_port`, `destination_net`, `destination_not`, `destination_port`, `gateway`, `log`, `quick`, `sequence`, `categories`, `description`, `enabled` | Yes |
-| `opn_update_nat_rule` | Update NAT port forwarding rule with savepoint. Params: `uuid`, `interface`, `protocol`, `destination_port`, `target_ip`, `target_port`, `description`, `enabled` | Yes |
-| `opn_delete_nat_rule` | Delete a NAT port forwarding rule by UUID with savepoint. Params: `uuid` | Yes |
+| `opn_update_firewall_rule` | Update filter rule fields with savepoint (OPNsense < 26.7). Params: `uuid`, `action`, `direction`, `interface`, `ip_protocol`, `protocol`, `source_net`, `source_not`, `source_port`, `destination_net`, `destination_not`, `destination_port`, `gateway`, `log`, `quick`, `sequence`, `categories`, `description`, `enabled` | Yes |
+| `opn_update_nat_rule` | Update NAT port forwarding rule with savepoint (OPNsense < 26.7). Params: `uuid`, `interface`, `protocol`, `destination_port`, `target_ip`, `target_port`, `description`, `enabled` | Yes |
+| `opn_delete_nat_rule` | Delete a NAT port forwarding rule by UUID with savepoint (OPNsense < 26.7). Params: `uuid` | Yes |
+
+> **Note:** Savepoint protection only exists on OPNsense < 26.7. On 26.7+ these tools apply changes immediately and permanently — see [Write Operations and Savepoints](#write-operations-and-savepoints).
 
 ### DNS (13 tools)
 
@@ -275,14 +277,18 @@ Full configuration management for the HAProxy load balancer (requires os-haproxy
 
 ## Write Operations and Savepoints
 
-Write operations require `OPNSENSE_ALLOW_WRITES=true` and use OPNsense's savepoint mechanism for safety:
+Write operations require `OPNSENSE_ALLOW_WRITES=true`. On **OPNsense < 26.7**, firewall changes additionally go through OPNsense's savepoint mechanism:
 
 1. **Before any firewall change**, a savepoint is created automatically
 2. **The change is applied** (rule toggle, add, or delete)
 3. **A 60-second countdown starts** — if not confirmed, OPNsense automatically reverts the change
 4. **Use `opn_confirm_changes`** with the returned `revision` to make changes permanent
 
-This means if an AI assistant makes a bad firewall change that locks you out, the change will automatically revert within 60 seconds.
+On those versions, if an AI assistant makes a bad firewall change that locks you out, the change reverts automatically within 60 seconds.
+
+**OPNsense 26.7 removed the savepoint/rollback API upstream, so there is no auto-revert on 26.7+.** The server does not hardcode a version cut-off: it probes for the savepoint endpoint on the first firewall write and, if OPNsense answers that the endpoint does not exist, degrades to direct apply for the rest of the session. Check `opn_mcp_info` — its `savepoint_support` field reports `true`, `false`, or `null` if no write has probed yet. Write tools then return an empty `revision`, `opn_confirm_changes` answers with `status: "not_applicable"`, and every firewall change is immediate and permanent.
+
+> **Warning:** On OPNsense 26.7+ take a config backup (`opn_download_config`, or System > Configuration > Backups) before enabling writes, and keep out-of-band access to the box — a rule that locks you out will not revert itself.
 
 > **Note:** `opn_reconfigure_unbound`, `opn_reconfigure_haproxy`, `opn_reconfigure_ddclient`, `opn_reconfigure_dnsmasq`, and `opn_configure_mdns_repeater` require writes but don't use savepoints — they apply service configuration changes and are not automatically revertible.
 
@@ -290,7 +296,7 @@ This means if an AI assistant makes a bad firewall change that locks you out, th
 
 ### Fully Automated via MCP
 
-- **IPv6 Firewall Rules** — Create rules with `ip_protocol="inet6"` (savepoint-protected)
+- **IPv6 Firewall Rules** — Create rules with `ip_protocol="inet6"` (savepoint-protected on OPNsense < 26.7)
 - **HAProxy IPv6 Bindings** — Frontends with `[::]:443` or `[2001:db8::1]:443` bind addresses
 - **HAProxy IPv6 Backends** — Servers with IPv6 addresses, `resolvePrefer: ipv6` on backends
 - **Dynamic DNS with IPv6** — DDNS accounts with IPv6-capable checkip methods
@@ -393,6 +399,7 @@ The server automatically detects the OPNsense version on first connection and se
 
 - The `revision` parameter must match exactly what was returned by the write operation
 - Confirmations must happen within 60 seconds or the change auto-reverts
+- On OPNsense 26.7+ there is no savepoint API: write tools return an empty `revision` and `opn_confirm_changes` returns `status: "not_applicable"`. That is expected, not a failure — the change already applied permanently
 
 ### Diagnostic Commands
 

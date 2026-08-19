@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-08-19
+
+### Added
+
+- `opn_mcp_info` reports `savepoint_support` (`true`/`false`/`null` when unprobed), so
+  rollback availability can be checked before the first write instead of being discovered
+  from the result of one.
+
+### Fixed
+
+- **Firewall:** all savepoint-protected write tools failed with `Endpoint not found` on
+  OPNsense 26.7+. Upstream removed the filter savepoint/rollback actions in core commit
+  `17b8461` and the re-added `applyAction()` no longer accepts a revision parameter, so
+  `firewall/filter/savepoint` and `firewall/filter/cancelRollback` are gone. This broke
+  `opn_add_firewall_rule`, `opn_update_firewall_rule`, `opn_delete_firewall_rule`,
+  `opn_toggle_firewall_rule`, `opn_add_nat_rule`, `opn_update_nat_rule`,
+  `opn_delete_nat_rule`, `opn_delete_firewall_category`, `opn_set_rule_categories`,
+  `opn_add_icmpv6_rules` and `opn_confirm_changes` — the savepoint call aborted every
+  write before it reached the actual endpoint.
+
+### Changed
+
+- `SavepointManager` probes the savepoint API once per session and degrades to
+  direct-apply mode when it is absent: `create()` returns an empty revision, `apply()`
+  is sent without the revision suffix, and `opn_confirm_changes` returns
+  `not_applicable`. Detection is a runtime endpoint probe rather than a version gate;
+  the detected version only corroborates a 404 whose error body is localised.
+- Tool docstrings and result messages no longer promise a 60-second auto-revert
+  unconditionally. **On OPNsense 26.7+ firewall changes apply immediately and are not
+  rolled back automatically** — take a config backup before write operations.
+- Degrade detection requires OPNsense's own "endpoint does not exist" answer: a bare HTTP
+  404 from a reverse proxy or WAF no longer strips the rollback net, and once savepoints
+  are proven to work in a session a later failure raises instead of silently downgrading.
+  `opn_confirm_changes` therefore never reports `not_applicable` while a rollback timer
+  from this session may still be armed.
+- `opn_add_icmpv6_rules` no longer claims changes were applied when every rule creation
+  failed and `apply()` was skipped.
+
 ## [0.4.0] - 2026-03-27
 
 ### Added

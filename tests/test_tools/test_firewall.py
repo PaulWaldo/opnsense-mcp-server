@@ -209,6 +209,57 @@ class TestOpnToggleFirewallRule:
         assert result["revision"] == "rev-toggle-err"
 
 
+class TestSavepointlessWrites:
+    """Writes on OPNsense 26.7+, where the savepoint API was removed upstream."""
+
+    async def test_add_rule_succeeds_without_savepoint(self, mock_api_writes, mock_savepoint_mgr, mock_ctx_writes):
+        mock_savepoint_mgr.create = AsyncMock(return_value="")
+        mock_api_writes.post = AsyncMock(return_value={"result": "saved", "uuid": "new-rule-uuid"})
+        mock_savepoint_mgr.apply = AsyncMock(return_value={})
+        result = await opn_add_firewall_rule(mock_ctx_writes)
+        assert result["uuid"] == "new-rule-uuid"
+        assert result["revision"] == ""
+        mock_savepoint_mgr.apply.assert_called_once_with("")
+        assert "opn_confirm_changes" not in result["message"]
+        assert "nothing auto-reverts" in result["message"]
+
+    async def test_add_rule_failure_message_without_savepoint(
+        self, mock_api_writes, mock_savepoint_mgr, mock_ctx_writes
+    ):
+        mock_savepoint_mgr.create = AsyncMock(return_value="")
+        mock_api_writes.post = AsyncMock(side_effect=OPNsenseAPIError("boom"))
+        result = await opn_add_firewall_rule(mock_ctx_writes)
+        assert result["error"] == "boom"
+        assert "Savepoint" not in result["message"]
+        assert "No changes were applied" in result["message"]
+
+    async def test_add_rule_failure_message_with_savepoint(self, mock_api_writes, mock_savepoint_mgr, mock_ctx_writes):
+        mock_savepoint_mgr.create = AsyncMock(return_value="rev-1")
+        mock_api_writes.post = AsyncMock(side_effect=OPNsenseAPIError("boom"))
+        result = await opn_add_firewall_rule(mock_ctx_writes)
+        assert result["message"] == "Savepoint created but rule creation failed. Changes will auto-revert."
+
+    async def test_delete_rule_succeeds_without_savepoint(self, mock_api_writes, mock_savepoint_mgr, mock_ctx_writes):
+        mock_savepoint_mgr.create = AsyncMock(return_value="")
+        mock_api_writes.post = AsyncMock(return_value={"result": "deleted"})
+        mock_savepoint_mgr.apply = AsyncMock(return_value={})
+        result = await opn_delete_firewall_rule(mock_ctx_writes, uuid="rule-uuid")
+        assert result["revision"] == ""
+        mock_savepoint_mgr.apply.assert_called_once_with("")
+
+    async def test_nat_rule_message_without_savepoint(self, mock_api_writes, mock_savepoint_mgr, mock_ctx_writes):
+        mock_savepoint_mgr.create = AsyncMock(return_value="")
+        mock_api_writes.post = AsyncMock(return_value={"result": "saved", "uuid": "nat-uuid"})
+        mock_savepoint_mgr.apply = AsyncMock(return_value={})
+        result = await opn_add_nat_rule(
+            mock_ctx_writes,
+            interface="wan",
+            destination_port="443",
+            target_ip="10.0.0.5",
+        )
+        assert result["message"].startswith("NAT rule created and applied directly")
+
+
 class TestOpnAddFirewallRule:
     """Tests for opn_add_firewall_rule."""
 
@@ -751,6 +802,17 @@ class TestOpnAddIcmpv6Rules:
         assert len(result["uuids"]) == 5
         assert result["revision"] == "rev-icmpv6-1"
         assert result["interface"] == "lan"
+
+    async def test_zero_created_does_not_claim_an_apply(self, mock_api_writes, mock_savepoint_mgr, mock_ctx_writes):
+        """When every rule fails, apply() never runs — the message must not claim otherwise."""
+        mock_savepoint_mgr.create = AsyncMock(return_value="")
+        mock_api_writes.post = AsyncMock(side_effect=OPNsenseAPIError("boom"))
+        mock_savepoint_mgr.apply = AsyncMock(return_value={})
+        result = await opn_add_icmpv6_rules(mock_ctx_writes, interface="lan")
+        assert result["rules_created"] == 0
+        assert len(result["errors"]) == 5
+        mock_savepoint_mgr.apply.assert_not_called()
+        assert result["message"] == "No ICMPv6 rules were created on 'lan'. Nothing was applied."
 
     async def test_all_rules_are_inet6(self, mock_api_writes, mock_savepoint_mgr, mock_ctx_writes):
         mock_savepoint_mgr.create = AsyncMock(return_value="rev-icmpv6-2")
