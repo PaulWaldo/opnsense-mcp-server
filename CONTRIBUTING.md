@@ -90,7 +90,7 @@ These are non-negotiable for all contributions:
 
 - Load credentials from environment variables only
 - Guard write operations with the `OPNSENSE_ALLOW_WRITES` check
-- Use the savepoint/rollback mechanism for all firewall modifications
+- Route all firewall modifications through the savepoint manager — it uses savepoint/rollback where OPNsense provides it (< 26.7) and degrades to direct apply on 26.7+
 - Keep transport as STDIO only — never expose HTTP/SSE endpoints
 - Validate user-provided inputs (hostnames, IP addresses) against injection
 
@@ -126,8 +126,8 @@ pytest -v --tb=long
 ## Quick Decision Trees
 
 - **GET vs POST:** Status/read operations use GET. Search with filters uses POST. Modifications/actions use POST.
-- **Write guard?** Read operations don't need one. Firewall changes need write guard + savepoint. Other modifications (DNS, HAProxy) need write guard only.
-- **Savepoint?** Firewall rule changes (add/delete/toggle) use savepoints with 60-second auto-revert. Service reconfigurations (Unbound, HAProxy, dnsmasq) do not.
+- **Write guard?** Read operations don't need one. Firewall changes need write guard + savepoint manager. Other modifications (DNS, HAProxy) need write guard only.
+- **Savepoint?** Firewall rule changes (add/delete/toggle) go through the savepoint manager: 60-second auto-revert on OPNsense < 26.7, direct apply on 26.7+ where upstream removed the API. The manager detects this by probing the endpoint at runtime, not by a hardcoded version check; the detected version only corroborates a 404 whose error body is localised and therefore unmatchable. Never gate the behaviour on the version alone, and never treat a bare 404 as proof — a reverse proxy produces the same status and would silently strip the rollback net. Service reconfigurations (Unbound, HAProxy, dnsmasq) never use it.
 
 ## Pull Request Checklist
 
@@ -135,7 +135,7 @@ pytest -v --tb=long
 - [ ] New tools have tests with mocked API responses
 - [ ] Docstrings are clear and describe when to use the tool
 - [ ] No hardcoded credentials or sensitive data
-- [ ] Write operations are guarded and use savepoints where appropriate
+- [ ] Write operations are guarded and go through the savepoint manager where appropriate
 - [ ] No overlapping tools — new tool has a distinct purpose from existing ones
 
 ## License
